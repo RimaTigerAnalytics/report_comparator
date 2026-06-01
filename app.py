@@ -162,6 +162,29 @@ if analysis_mode == "Single Report Mode":
 
         # --- CASE A2: METRIC SHEETS ---
         elif "_metric" in selected_sheet.lower():
+            # Global Row Data Slicing Filters for Metrics (Fixed Nesting Placement)
+            st.sidebar.markdown("### 🛠️ Add Data Row Filters")
+            filter_targets = st.sidebar.multiselect(
+                "Select columns to filter data by:",
+                options=all_cols,
+                key="s_met_targ",
+                placeholder="Choose columns",
+            )
+
+            filtered_df = df.copy()
+            for col in filter_targets:
+                combined_vals = sorted(list(df[col].dropna().astype(str).unique()))
+                selected_vals = st.sidebar.multiselect(
+                    f"Values for [{col}]",
+                    options=combined_vals,
+                    key=f"s_met_val_{col}",
+                    placeholder=f"All {col} active",
+                )
+                if selected_vals:
+                    filtered_df = filtered_df[
+                        filtered_df[col].astype(str).isin(selected_vals)
+                    ]
+
             metric_view_layout = st.radio(
                 "Select Metric View Layout:",
                 options=[
@@ -173,57 +196,22 @@ if analysis_mode == "Single Report Mode":
             )
 
             if metric_view_layout == "Pivot Table Matrix Explorer":
-                # UPGRADED: Intelligent content-based categorical scanner
-                categorical_cols = []
-                for c in all_cols:
-                    if pd.api.types.is_float_dtype(df[c]):
-                        continue  # Skip continuous decimals globally
-                    try:
-                        n_unique = df[c].nunique()
-                        if df[c].dtype == "object" or isinstance(
-                            df[c].dtype, pd.CategoricalDtype
-                        ):
-                            if (
-                                n_unique < 100
-                            ):  # Isolates text bins and groupings, rejects text metrics
-                                categorical_cols.append(c)
-                        elif pd.api.types.is_integer_dtype(df[c]):
-                            if (
-                                n_unique < 20
-                            ):  # Catches low-cardinality integer codes/flags
-                                categorical_cols.append(c)
-                    except:
-                        continue
+                # UPGRADED: Explicit keyword whitelist mapping requested by user
+                pivot_whitelist = ["rfm", "overall"]  # , "sld_menu_itm_id", "dv_id"
+                bin_columns = [
+                    c for c in all_cols if "bin" in c.lower() or "label" in c.lower()
+                ]
+                categorical_cols = [
+                    c for c in all_cols if c.lower() in pivot_whitelist or c in bin_columns
+                ]
                 if not categorical_cols:
                     categorical_cols = all_cols
-
-                st.sidebar.markdown("### 🛠️ Add Data Filters for Pivot")
-                filter_targets = st.sidebar.multiselect(
-                    "Select columns to filter data by:",
-                    options=all_cols,
-                    key="s_met_targ",
-                    placeholder="Choose columns",
-                )
-
-                filtered_df = df.copy()
-                for col in filter_targets:
-                    combined_vals = sorted(list(df[col].dropna().astype(str).unique()))
-                    selected_vals = st.sidebar.multiselect(
-                        f"Values for [{col}]",
-                        options=combined_vals,
-                        key=f"s_met_val_{col}",
-                        placeholder=f"All {col} active",
-                    )
-                    if selected_vals:
-                        filtered_df = filtered_df[
-                            filtered_df[col].astype(str).isin(selected_vals)
-                        ]
 
                 st.markdown("### 🎛️ Setup Pivot Configurations")
                 p_col1, p_col2, p_col3, p_col4 = st.columns(4)
                 with p_col1:
                     row_sel = st.selectbox(
-                        "Rows (Categorical Only)",
+                        "Rows (Whitelisted Columns Only)",
                         categorical_cols,
                         index=0,
                         key="s_row",
@@ -236,9 +224,7 @@ if analysis_mode == "Single Report Mode":
                         (
                             i
                             for i, c in enumerate(remaining_cat)
-                            if "bin" in c.lower()
-                            or "label" in c.lower()
-                            or "scenario" in c.lower()
+                            if "bin" in c.lower() or "label" in c.lower()
                         ),
                         0,
                     )
@@ -315,16 +301,16 @@ if analysis_mode == "Single Report Mode":
                         "⚠️ Please choose at least one key column to structure rows."
                     )
                 else:
-                    df_display = df.set_index(id_cols).sort_index()
+                    df_display = filtered_df[[col for col in df.columns if "bin" not in col.lower() and "label" not in col.lower()]].set_index(id_cols).sort_index()
                     if "Report_Version" in df_display.columns:
                         df_display = df_display.drop(columns=["Report_Version"])
 
                     format_rules = {}
                     for col in df_display.columns:
-                        if "wmape" in col.lower() or "error" in col.lower():
+                        if ("wmape" in col.lower() or "error" in col.lower()):
                             format_rules[col] = lambda x: (
                                 f"{x*100:.2f}%" if pd.notnull(x) else "-"
-                            )
+                            )                            
                         else:
                             format_rules[col] = lambda x: (
                                 f"{x:,.2f}" if pd.notnull(x) else "-"
@@ -486,6 +472,39 @@ elif analysis_mode == "Two-Report Comparison Mode":
 
             # --- CASE B2: METRIC SHEETS ---
             elif "_metric" in selected_sheet.lower():
+                # Global Row Data Slicing Filters for Metric Comparisons (Fixed Nesting Placement)
+                st.sidebar.markdown("### 🛠️ Add Data Row Filters")
+                filter_targets = st.sidebar.multiselect(
+                    "Select columns to filter matrices by:",
+                    options=all_cols,
+                    key="c_met_targ",
+                    placeholder="Choose columns",
+                )
+
+                filtered_df_old = df_old.copy()
+                filtered_df_new = df_new.copy()
+
+                for col in filter_targets:
+                    combined_vals = sorted(
+                        list(
+                            set(df_old[col].dropna().astype(str).unique())
+                            | set(df_new[col].dropna().astype(str).unique())
+                        )
+                    )
+                    selected_vals = st.sidebar.multiselect(
+                        f"Values for [{col}]",
+                        options=combined_vals,
+                        key=f"c_met_val_{col}",
+                        placeholder=f"All {col} active",
+                    )
+                    if selected_vals:
+                        filtered_df_old = filtered_df_old[
+                            filtered_df_old[col].astype(str).isin(selected_vals)
+                        ]
+                        filtered_df_new = filtered_df_new[
+                            filtered_df_new[col].astype(str).isin(selected_vals)
+                        ]
+
                 metric_view_layout = st.radio(
                     "Select Metric View Layout:",
                     options=[
@@ -498,63 +517,22 @@ elif analysis_mode == "Two-Report Comparison Mode":
 
                 # --- SUB-ROUTE 1: PIVOT SETUP ---
                 if metric_view_layout == "Pivot Table Matrix Explorer":
-                    # UPGRADED: Content-based scanner for comparison mode
-                    categorical_cols = []
-                    for c in all_cols:
-                        if pd.api.types.is_float_dtype(df_new[c]):
-                            continue
-                        try:
-                            n_unique = df_new[c].nunique()
-                            if df_new[c].dtype == "object" or isinstance(
-                                df_new[c].dtype, pd.CategoricalDtype
-                            ):
-                                if n_unique < 100:
-                                    categorical_cols.append(c)
-                            elif pd.api.types.is_integer_dtype(df_new[c]):
-                                if n_unique < 20:
-                                    categorical_cols.append(c)
-                        except:
-                            continue
+                    # UPGRADED: Explicit keyword whitelist mapping requested by user
+                    pivot_whitelist = ["rfm", "overall"]  # , "sld_menu_itm_id", "dv_id"
+                    bin_columns = [
+                        c for c in all_cols if "bin" in c.lower() or "label" in c.lower()
+                    ]
+                    categorical_cols = [
+                        c for c in all_cols if c.lower() in pivot_whitelist or c in bin_columns
+                    ]
                     if not categorical_cols:
                         categorical_cols = all_cols
-
-                    st.sidebar.markdown("### 🛠️ Add Data Filters for Pivots")
-                    filter_targets = st.sidebar.multiselect(
-                        "Select columns to filter matrices by:",
-                        options=all_cols,
-                        key="c_met_targ",
-                        placeholder="Choose columns",
-                    )
-
-                    filtered_df_old = df_old.copy()
-                    filtered_df_new = df_new.copy()
-
-                    for col in filter_targets:
-                        combined_vals = sorted(
-                            list(
-                                set(df_old[col].dropna().astype(str).unique())
-                                | set(df_new[col].dropna().astype(str).unique())
-                            )
-                        )
-                        selected_vals = st.sidebar.multiselect(
-                            f"Values for [{col}]",
-                            options=combined_vals,
-                            key=f"c_met_val_{col}",
-                            placeholder=f"All {col} active",
-                        )
-                        if selected_vals:
-                            filtered_df_old = filtered_df_old[
-                                filtered_df_old[col].astype(str).isin(selected_vals)
-                            ]
-                            filtered_df_new = filtered_df_new[
-                                filtered_df_new[col].astype(str).isin(selected_vals)
-                            ]
 
                     st.markdown("### 🎛️ Setup Pivot Configurations")
                     p_col1, p_col2, p_col3, p_col4 = st.columns(4)
                     with p_col1:
                         row_sel = st.selectbox(
-                            "Rows (Categorical Only)",
+                            "Rows (Whitelisted Columns Only)",
                             categorical_cols,
                             index=0,
                             key="c_row",
@@ -567,9 +545,7 @@ elif analysis_mode == "Two-Report Comparison Mode":
                             (
                                 i
                                 for i, c in enumerate(remaining_cat_cols)
-                                if "bin" in c.lower()
-                                or "label" in c.lower()
-                                or "scenario" in c.lower()
+                                if "bin" in c.lower() or "label" in c.lower()
                             ),
                             0,
                         )
@@ -704,8 +680,9 @@ elif analysis_mode == "Two-Report Comparison Mode":
                                 "Select metrics on the sidebar selector to build the comparative table layout."
                             )
                         else:
-                            raw_old_indexed = df_old.set_index(id_cols)
-                            raw_new_indexed = df_new.set_index(id_cols)
+                            # Slicing the pre-filtered datasets dynamically (Fixed Bug)
+                            raw_old_indexed = filtered_df_old.set_index(id_cols)
+                            raw_new_indexed = filtered_df_new.set_index(id_cols)
 
                             combined_index = raw_old_indexed.index.union(
                                 raw_new_indexed.index
