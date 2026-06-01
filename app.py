@@ -4,6 +4,16 @@ import streamlit as st
 
 st.set_page_config(page_title="Model Report Workspace", layout="wide")
 st.title("📊 Model Report Workspace")
+# 🔍 TEMPORARY DIAGNOSTIC BLOCK
+st.markdown("### ⚙️ Live Server Configuration Check")
+col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+with col_cfg1:
+    st.metric("XSRF Protection", str(st.get_option("server.enableXsrfProtection")))
+with col_cfg2:
+    st.metric("CORS Protection", str(st.get_option("server.enableCORS")))
+with col_cfg3:
+    st.metric("Max Upload Size Limit", f"{st.get_option('server.maxUploadSize')} MB")
+st.markdown("---")
 
 # --- Workflow selection at the top ---
 analysis_mode = st.radio(
